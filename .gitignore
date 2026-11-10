@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Simulation outputs (large, regenerated)
+*.feather
+*.lz4
+*.ill
+*.pickle

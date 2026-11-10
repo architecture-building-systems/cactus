@@ -1,0 +1,29 @@
+[project]
+name = "solar-cactus"
+version = "0.0.1"
+description = "Comprehensive Assessment and Computational Toolset for Urban Solar: simulation of building-integrated PV arrays with a single-diode model."
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+authors = [{ name = "Justin McCarty" }]
+dependencies = [
+    "numpy",
+    "pvlib",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cactus"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
