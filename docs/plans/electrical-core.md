@@ -1,6 +1,6 @@
 # Electrical core plan (phase 1)
 
-Status: Draft (becomes Approved when Justin answers section 7)
+Status: Approved (Justin answered section 7 on 2026-11-10)
 Date: 2026-11-10. Code checked at cactus branch `bootstrap`.
 Branch for the work: `phase-1-electrical-core` (create from `bootstrap`, or from `main` once `bootstrap` is merged)
 Depends on: phase 0 (bootstrap)
@@ -12,7 +12,7 @@ Depends on: phase 0 (bootstrap)
 3. IPV_Workbench combined curves with `np.interp`, which repeats the end value when asked for a point outside a curve. That hid the error in finding 2.
 4. IPV_Workbench clipped bypass voltage on the summed module voltage. With per-cell breakdown and 24 cells per diode group the effect is under 1 %, but it is still wrong for other group sizes.
 5. No measured IV data and no earlier corrected implementation are available. Validation is against pvlib and analytic cases.
-6. A throwaway prototype of the design below was run on 2026-11-10 with device D001. It reproduced pvlib's module maximum power from 144 cell curves to 0.01 % and produced the expected values in section 4.3. The prototype is not in the repo.
+6. A throwaway prototype of the design below was run on 2026-11-10 with device D001. It reproduced pvlib's module maximum power from 144 cell curves to 0.01 % and produced the expected values in section 4.3. The prototype is saved as `docs/plans/electrical-core-prototype.py` for reference.
 
 ## 2. Critique
 
@@ -52,6 +52,8 @@ Rejected alternatives: storing curves as current on a voltage grid (series conne
 ## 4. Brief for the building session
 
 ### 4.1 Files to create or change
+
+A reference prototype is in `docs/plans/electrical-core-prototype.py`. It works on plain arrays and has no input checks or `IVCurve` type. Use it to see the method and to check numbers; write the package code and tests from this brief, and follow the brief where the two differ. Do not import it from the package or the tests.
 
 - `src/cactus/electrical/__init__.py`: exports the names in 4.2.
 - `src/cactus/electrical/curve.py`: `IVCurve`, `series`, `parallel`, `bypass`, `max_power_point`.
@@ -135,12 +137,13 @@ ADR-004 (write when this is reviewed): curves are voltage sampled on a current g
 
 ## 7. Questions for Justin
 
-1. Project notes from the earlier `circuits.py` work say that series curves have a real "fold" (current with two values at one voltage) that must not be removed by resampling onto a current grid. With ideal elements a series curve has exactly one voltage for each current, so this design uses a current grid and keeps mismatch steps. Was the fold seen in measured data, or was it produced by the old code? If it was real, what caused it?
-2. Is an ideal bypass diode with a 0.5 V drop acceptable for now?
-3. Keep the Workbench's reverse-bias values as defaults (breakdown voltage -15 V per cell, factor 0.002, exponent 3.28)?
-4. For a fully dark cell, fixing voltage at the breakdown voltage for any current it cannot otherwise carry (risk 1 in section 2): acceptable?
+All answered 2026-11-10.
 
-Defaults if not answered otherwise: current grid as designed, yes, yes, yes.
+1. Is the "fold" in series curves from the earlier `circuits.py` notes real? Justin: not sure, probably produced by the old code. Decision: use the current grid as designed. If a fold shows up in measured data later, reopen this.
+2. Ideal bypass diode with a 0.5 V drop: Justin chose yes.
+3. Reverse-bias defaults (-15 V per cell, factor 0.002, exponent 3.28): Justin chose yes.
+4. A fully dark cell held at the breakdown voltage for any current it cannot otherwise carry: Justin chose yes.
+5. Save the prototype next to the plan: Justin chose yes.
 
 ## 8. Build report
 
