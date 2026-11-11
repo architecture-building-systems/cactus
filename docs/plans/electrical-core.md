@@ -1,6 +1,6 @@
 # Electrical core plan (phase 1)
 
-Status: Approved (Justin answered section 7 on 2026-11-10)
+Status: Built (awaiting review), 2026-11-11. Approved 2026-11-10 (Justin answered section 7).
 Date: 2026-11-10. Code checked at cactus branch `bootstrap`.
 Branch for the work: `phase-1-electrical-core` (create from `bootstrap`, or from `main` once `bootstrap` is merged)
 Depends on: phase 0 (bootstrap)
@@ -147,11 +147,26 @@ All answered 2026-11-10.
 
 ## 8. Build report
 
-Filled in by the building session.
-
-- Date, model, branch, last commit:
-- What was built:
+- Date, model, branch, last commit: 2026-11-11, Claude Opus 5.5 (configured `claude-opus-5-5`) in Cowork. Branch `phase-1-electrical-core`, created from `main` at ce99def (bootstrap already merged in PR #1). The build is one commit on that branch; its hash is in `git log`.
+- What was built: `src/cactus/electrical/` (`__init__.py`, `curve.py`, `cell.py`) with every name in 4.2; `tests/electrical/` (`conftest.py`, `test_cell.py`, `test_curve.py`) with all 18 tests in 4.3, written first and seen failing (collection error, module missing) before the code existed. `AGENTS.md` Layout and invariants 1, 2, 3, 4, 8 updated; `docs/plans/README.md` row updated.
+- Numbers measured (25 degC): cell Pmp 3.13196 W (pvlib `bishop88_mpp` 3.13213 W, -0.005 %); cell Voc 0.69029 V; cell minimum voltage on `grid` -13.60 V; unshaded substring 225.501 W; module (two substrings in parallel) 450.988 W vs pvlib 451.03 W (-0.009 %); one cell at 200 W/m2: ratio 0.6547 (147.6 W); strings of 4 and 11 in parallel: 0.5517; five strings of 10: 0.99997; two tiers of two: 0.99997; three substrings in parallel: 0.99997. All agree with the prototype output.
 - Deviations from the brief:
-- Checks run (paste summary lines) and checks not run:
-- Questions back to planning:
+  1. `IVCurve` also rejects non-finite values and arrays that are not 1-D. The brief lists only monotonicity and length checks.
+  2. `parallel([])` raises `ValueError`, matching `series([])`. The brief states this only for `series`.
+  3. `max_power_point` reads the current at the parabola's peak by interpolating between the three points used for the fit, not over the whole curve. Same value; it avoids interpolating over flat parts of a curve. It also skips the parabola when the three voltages are equal.
+  4. Reverse-bias diode-voltage samples use `np.linspace(0.97 * breakdown_voltage, 0, n_sample // 2, endpoint=False)` as the brief says; the prototype used `n_sample // 2 - 1` points. No measurable effect on the numbers above.
+  5. `test_no_bypass_reverse_bias` sits in `test_cell.py`; the brief does not assign tests to files.
+- Checks run, on Python 3.13.18 in the cloud container with `UV_PROJECT_ENVIRONMENT` outside the repo (pvlib 0.16.1, numpy 2.5.4):
+  - `uv sync`: `Resolved 21 packages`, `Checked 20 packages`
+  - `uv run pytest -q`: `19 passed in 1.26s`
+  - `uv run ruff check`: `All checks passed!`
+  - `uv run ruff format --check`: `13 files already formatted`
+  - Not run: the same checks on Justin's Mac (macOS `.venv`), and nothing was run in the device shell (Python 3.10, no pvlib).
+- Optional PVMismatch cross-check: `pvmismatch` 4.1 imports on Python 3.13 (with a SyntaxWarning in its docstrings). Module `STD72` (three bypassed groups of 24), bypass -0.5 V, first cell at 0.2 suns. With PVMismatch's default cell: 241.0 W unshaded, 206.0 W shaded, ratio 0.855 (its default reverse-bias parameters differ). With an approximate D001 mapping (one diode, `Isat2_T0=0`, `Isat1_T0=8.85e-12`, `Isc0_T0=5.6715`, per-cell `Rs`, `Rsh`, `aRBD=0.002`, `bRBD=0`, `VRBD=-15`, `nRBD=3.28`): 228.3 W unshaded, 152.0 W shaded, ratio 0.666, against cactus 225.5 W, 147.6 W, 0.655. The mapping is not exact: PVMismatch fixes the diode ideality at 1 (D001 cell `a_ref` 0.02540 V vs thermal voltage 0.02569 V) and uses Isc rather than IL. Not added as a dependency.
+- Questions back to planning: none blocking.
+  1. `test_parallel_identity` checks power and current at the maximum power point only; invariant 3 says "at every voltage". Should a test compare the whole parallel curve to 3 times the substring current on a voltage grid?
+  2. Invariant 2 is tested for `series` only; the `parallel` shared-range error has no test. Add one in a later phase?
 - Notes on things seen but not changed:
+  1. `bishop88` at irradiance 0 runs with infinite shunt resistance. A run with warnings turned into errors (`python -W error`) at 0 W/m2 and 500 W/m2, 75 degC, raised nothing.
+  2. A dark cell's sampled curve ends at about 0 A (risk 1 in section 2: the Bishop term vanishes), so on `grid` it steps from +0.54 V at -0.015 A to -15.0 V at +0.005 A. This is the designed rule and the curve stays non-increasing, but the step is one grid interval wide and visible if plotted.
+  3. `test_power_bound` takes most of the test time (50 x 72 cells); fine for now.

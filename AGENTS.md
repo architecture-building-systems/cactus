@@ -34,11 +34,15 @@ When working from a shell that is not Justin's Mac (for example a Linux sandbox)
 ## Layout
 
 ```
-src/cactus/      the library (empty package at bootstrap)
-tests/           pytest tests
-docs/decisions/  decision records
-docs/plans/      plans
+src/cactus/                    the library
+src/cactus/electrical/curve.py IVCurve (voltage on a current grid); series, parallel, bypass, max_power_point
+src/cactus/electrical/cell.py  CellParameters, module-to-cell conversion, cell curves (pvlib De Soto + Bishop)
+tests/                         pytest tests (tests/electrical/ for the electrical core)
+docs/decisions/                decision records
+docs/plans/                    plans
 ```
+
+Pipeline so far: module datasheet values -> `cell_parameters_from_module` -> `cell_curves` -> `bypass`/`series`/`parallel` -> `max_power_point`.
 
 The planned modules and the order they are built in are in `docs/plans/migration.md`. Update this section when a module lands.
 
@@ -46,14 +50,14 @@ The planned modules and the order they are built in are in `docs/plans/migration
 
 These must hold once the electrical core exists. Each gets a test when the code that it constrains is written; add the test name next to the invariant at that point.
 
-1. Bypass diodes act on the group of cells they span. Voltage is clipped per group inside the series sum, never on the summed voltage of a module or string.
-2. No silent clamping or extrapolation when curves are combined. If one curve does not cover the current (series) or voltage (parallel) range needed, the code raises an error.
-3. Identity cases: N identical cells in series under uniform conditions give N times the cell voltage at every current; N identical strings in parallel give N times the string current at every voltage.
-4. The power of any assembly never exceeds the sum of the maximum powers of its parts.
+1. Bypass diodes act on the group of cells they span. Voltage is clipped per group inside the series sum, never on the summed voltage of a module or string. Test: `tests/electrical/test_curve.py::test_bypass_per_group`.
+2. No silent clamping or extrapolation when curves are combined. If one curve does not cover the current (series) or voltage (parallel) range needed, the code raises an error. Test: `tests/electrical/test_curve.py::test_series_needs_shared_range`.
+3. Identity cases: N identical cells in series under uniform conditions give N times the cell voltage at every current; N identical strings in parallel give N times the string current at every voltage. Tests: `tests/electrical/test_curve.py::test_series_identity`, `::test_parallel_identity`.
+4. The power of any assembly never exceeds the sum of the maximum powers of its parts. Test: `tests/electrical/test_curve.py::test_power_bound`.
 5. Solar position is computed with time-zone-aware timestamps.
 6. The cell temperature range of any lookup or interpolation covers the temperatures that the temperature model can produce. Out-of-range input raises an error; it is not clamped silently.
 7. One description of the electrical topology drives both the electrical solve and the count of components used for carbon and cost.
-8. Datasheet parameters given for a whole module are converted to one cell before a cell curve is computed, and the reverse breakdown voltage applies per cell. A lit cell's curve must reach its breakdown region (IPV_Workbench applied the -15 V breakdown to the whole module, which limited each cell to about -0.2 V and hid most mismatch loss).
+8. Datasheet parameters given for a whole module are converted to one cell before a cell curve is computed, and the reverse breakdown voltage applies per cell. A lit cell's curve must reach its breakdown region (IPV_Workbench applied the -15 V breakdown to the whole module, which limited each cell to about -0.2 V and hid most mismatch loss). Test: `tests/electrical/test_cell.py::test_cell_reaches_breakdown`.
 
 ## Contracts
 
