@@ -1,6 +1,6 @@
 # Electrical core plan (phase 1)
 
-Status: Built (awaiting review), 2026-11-11, with one open question (8, question 3). Approved 2026-11-10 (Justin answered section 7).
+Status: Done (ADR-004, PR #2), 2026-11-11. Approved 2026-11-10 (Justin answered section 7); addendum A approved and built 2026-11-11.
 Date: 2026-11-10. Code checked at cactus branch `bootstrap`.
 Branch for the work: `phase-1-electrical-core` (create from `bootstrap`, or from `main` once `bootstrap` is merged)
 Depends on: phase 0 (bootstrap)
@@ -12,7 +12,7 @@ Depends on: phase 0 (bootstrap)
 3. IPV_Workbench combined curves with `np.interp`, which repeats the end value when asked for a point outside a curve. That hid the error in finding 2.
 4. IPV_Workbench clipped bypass voltage on the summed module voltage. With per-cell breakdown and 24 cells per diode group the effect is under 1 %, but it is still wrong for other group sizes.
 5. No measured IV data and no earlier corrected implementation are available. Validation is against pvlib and analytic cases.
-6. A throwaway prototype of the design below was run on 2026-11-10 with device D001. It reproduced pvlib's module maximum power from 144 cell curves to 0.01 % and produced the expected values in section 4.3. The prototype is saved as `docs/plans/electrical-core-prototype.py` for reference.
+6. A throwaway prototype of the design below was run on 2026-11-10 with device D001. It reproduced pvlib's module maximum power from 144 cell curves to 0.01 % and produced the expected values in section 4.3. The prototype was saved as `docs/plans/electrical-core-prototype.py` and deleted when the plan closed; it is in the git history at f5383b9.
 
 ## 2. Critique
 
@@ -53,7 +53,7 @@ Rejected alternatives: storing curves as current on a voltage grid (series conne
 
 ### 4.1 Files to create or change
 
-A reference prototype is in `docs/plans/electrical-core-prototype.py`. It works on plain arrays and has no input checks or `IVCurve` type. Use it to see the method and to check numbers; write the package code and tests from this brief, and follow the brief where the two differ. Do not import it from the package or the tests.
+A reference prototype was in `docs/plans/electrical-core-prototype.py` (deleted at close; see git history at f5383b9). It works on plain arrays and has no input checks or `IVCurve` type. Use it to see the method and to check numbers; write the package code and tests from this brief, and follow the brief where the two differ. Do not import it from the package or the tests.
 
 - `src/cactus/electrical/__init__.py`: exports the names in 4.2.
 - `src/cactus/electrical/curve.py`: `IVCurve`, `series`, `parallel`, `bypass`, `max_power_point`.
@@ -133,7 +133,7 @@ None.
 
 ## 6. ADR outline
 
-ADR-004 (write when this is reviewed): curves are voltage sampled on a current grid; cells are computed from per-cell parameters with breakdown per cell; voltage is fixed at the breakdown voltage beyond the sampled current range; ideal bypass diode.
+ADR-004 (written 2026-11-11 as `docs/decisions/004-electrical-core.md`, extended with the decisions in 10.2): curves are voltage sampled on a current grid; cells are computed from per-cell parameters with breakdown per cell; voltage is fixed at the breakdown voltage beyond the sampled current range; ideal bypass diode.
 
 ## 7. Questions for Justin
 

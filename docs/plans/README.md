@@ -4,8 +4,8 @@ One file per piece of work. Status values: Draft, Approved, In progress, Built (
 
 | Plan | Status | Branch | Notes |
 |---|---|---|---|
-| [migration.md](migration.md) | Approved | | Order of work to a first end-to-end release. Phase 0 done. |
-| [electrical-core.md](electrical-core.md) | Built (awaiting review) | `phase-1-electrical-core` | Phase 1. Built and reviewed 2026-11-11; addendum A (grids, dark cells) applied. To close: run tests on the Mac, merge, ADR-004, delete `electrical-core-prototype.py`. |
+| [migration.md](migration.md) | Approved | | Order of work to a first end-to-end release. Phases 0 and 1 done. |
+| [electrical-core.md](electrical-core.md) | Done (ADR-004, PR #2) | `phase-1-electrical-core` | Phase 1, closed 2026-11-11. |
 
 ## How work is split between sessions
 
