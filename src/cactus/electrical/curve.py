@@ -5,7 +5,9 @@ voltage sampled on a strictly increasing current grid. Series connection adds
 voltages at equal current; parallel connection adds currents at equal voltage.
 
 No function here lets ``np.interp`` repeat an end value: every interpolation
-is evaluated inside the range covered by its sample points.
+is evaluated inside the range covered by its sample points. Every current grid
+is built by ``current_grid`` and contains 0 A, so open-circuit voltage is read
+at a grid point.
 
 Units: current A, voltage V, power W.
 """
@@ -17,9 +19,6 @@ import numpy as np
 
 #: Allowed upward step in voltage (V) between neighbouring samples.
 VOLTAGE_NOISE = 1e-9
-
-#: Slope (V/A) added to flat parts of a curve so voltage can be inverted.
-SLOPE = 1e-9
 
 
 @dataclass(frozen=True, eq=False)
@@ -51,6 +50,23 @@ class IVCurve:
         object.__setattr__(self, "voltage", voltage)
 
 
+def current_grid(lo: float, hi: float, n_points: int = 600) -> np.ndarray:
+    """Current grid of ``n_points`` from ``lo`` to ``hi`` that contains 0 A exactly.
+
+    Spacing is uniform on each side of zero. If the range does not straddle
+    zero the grid is a plain ``linspace``.
+    """
+    if n_points < 3:
+        raise ValueError(f"n_points must be >= 3, got {n_points}")
+    if not lo < hi:
+        raise ValueError(f"need lo < hi, got {lo} and {hi}")
+    if lo < 0.0 < hi:
+        n_neg = min(n_points - 2, max(1, round((n_points - 1) * -lo / (hi - lo))))
+        negative = np.linspace(lo, 0.0, n_neg, endpoint=False)
+        return np.concatenate([negative, np.linspace(0.0, hi, n_points - n_neg)])
+    return np.linspace(lo, hi, n_points)
+
+
 def bypass(curve: IVCurve, diode_voltage: float = 0.5) -> IVCurve:
     """Ideal bypass diode across the group of cells that ``curve`` describes.
 
@@ -80,16 +96,29 @@ def series(curves: Sequence[IVCurve], n_points: int = 600) -> IVCurve:
             f"the operands' shared current range [{lo}, {hi}] A does not include "
             "zero and positive current"
         )
-    grid = np.linspace(lo, hi, n_points)
+    grid = current_grid(lo, hi, n_points)
     # grid lies inside every operand's current range: no end value is repeated.
     voltage = sum(np.interp(grid, c.current, c.voltage) for c in curves)
     return IVCurve(grid, voltage)
 
 
+def _strictly_decreasing(values: np.ndarray) -> np.ndarray:
+    """``values`` made strictly decreasing with the smallest change floats allow.
+
+    Removes upward noise, then lowers sample k by k steps of a few units in the
+    last place of the largest magnitude, so flat parts (a bypass floor, the
+    breakdown floor) can be inverted.
+    """
+    monotone = np.minimum.accumulate(values)
+    step = 4.0 * np.finfo(float).eps * max(1.0, float(np.max(np.abs(monotone))))
+    return monotone - step * np.arange(monotone.size)
+
+
 def _current_at_voltage(curve: IVCurve, v_grid: np.ndarray) -> np.ndarray:
     """Current of ``curve`` at increasing voltages inside its voltage range."""
-    strict = curve.voltage - SLOPE * (curve.current - curve.current[0])
-    return np.interp(v_grid, strict[::-1], curve.current[::-1])
+    strict = _strictly_decreasing(curve.voltage)
+    v = np.clip(v_grid, strict[-1], strict[0])
+    return np.interp(v, strict[::-1], curve.current[::-1])
 
 
 def parallel(curves: Sequence[IVCurve], n_points: int = 600) -> IVCurve:
@@ -114,12 +143,10 @@ def parallel(curves: Sequence[IVCurve], n_points: int = 600) -> IVCurve:
     # v_grid lies inside every operand's voltage range: no end value is repeated.
     total = sum(_current_at_voltage(c, v_grid) for c in curves)
     # total falls as voltage rises; reverse so current increases.
-    x = total[::-1]
-    if not np.all(np.diff(x) > 0):
-        x = x + SLOPE * np.arange(x.size)
-    grid = np.linspace(total.min(), total.max(), n_points)
-    # grid lies inside [x[0], x[-1]]: no end value is repeated.
-    return IVCurve(grid, np.interp(grid, x, v_grid[::-1]))
+    falling = _strictly_decreasing(total)
+    grid = current_grid(falling[-1], falling[0], n_points)
+    # grid lies inside the summed current's range: no end value is repeated.
+    return IVCurve(grid, np.interp(grid, falling[::-1], v_grid[::-1]))
 
 
 def max_power_point(curve: IVCurve) -> tuple[float, float, float]:

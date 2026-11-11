@@ -7,6 +7,7 @@ from cactus.electrical import (
     bypass,
     cell_curves,
     cell_parameters_from_module,
+    current_grid,
     series,
 )
 
@@ -39,7 +40,7 @@ def cell(d001_module):
 
 @pytest.fixture
 def grid():
-    return np.linspace(-3.0, 9.0, 600)
+    return current_grid(-3.0, 9.0, 600)
 
 
 def make_substring(cell, irradiance, grid):

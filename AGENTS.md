@@ -35,14 +35,14 @@ When working from a shell that is not Justin's Mac (for example a Linux sandbox)
 
 ```
 src/cactus/                    the library
-src/cactus/electrical/curve.py IVCurve (voltage on a current grid); series, parallel, bypass, max_power_point
-src/cactus/electrical/cell.py  CellParameters, module-to-cell conversion, cell curves (pvlib De Soto + Bishop)
+src/cactus/electrical/curve.py IVCurve (voltage on a current grid); current_grid, series, parallel, bypass, max_power_point
+src/cactus/electrical/cell.py  CellParameters, module-to-cell conversion, cell_current_grid, cell curves (pvlib De Soto + Bishop)
 tests/                         pytest tests (tests/electrical/ for the electrical core)
 docs/decisions/                decision records
 docs/plans/                    plans
 ```
 
-Pipeline so far: module datasheet values -> `cell_parameters_from_module` -> `cell_curves` -> `bypass`/`series`/`parallel` -> `max_power_point`.
+Pipeline so far: module datasheet values -> `cell_parameters_from_module` -> `cell_current_grid` -> `cell_curves` -> `bypass`/`series`/`parallel` -> `max_power_point`.
 
 The planned modules and the order they are built in are in `docs/plans/migration.md`. Update this section when a module lands.
 
@@ -51,7 +51,7 @@ The planned modules and the order they are built in are in `docs/plans/migration
 These must hold once the electrical core exists. Each gets a test when the code that it constrains is written; add the test name next to the invariant at that point.
 
 1. Bypass diodes act on the group of cells they span. Voltage is clipped per group inside the series sum, never on the summed voltage of a module or string. Test: `tests/electrical/test_curve.py::test_bypass_per_group`.
-2. No silent clamping or extrapolation when curves are combined. If one curve does not cover the current (series) or voltage (parallel) range needed, the code raises an error. Tests: `tests/electrical/test_curve.py::test_series_needs_shared_range`, `::test_parallel_needs_shared_range`.
+2. No silent clamping or extrapolation when curves are combined. If one curve does not cover the current (series) or voltage (parallel) range needed, the code raises an error. Every current grid contains 0 A, and the grid for a set of cells is sized to their largest photocurrent (`cell_current_grid`), so open-circuit voltage and low-light power are not lost between grid points. Tests: `tests/electrical/test_curve.py::test_series_needs_shared_range`, `::test_parallel_needs_shared_range`, `::test_combined_grids_contain_zero`, `tests/electrical/test_cell.py::test_grid_spanning_zero_must_contain_zero`, `::test_low_light_accuracy`.
 3. Identity cases: N identical cells in series under uniform conditions give N times the cell voltage at every current; N identical strings in parallel give N times the string current at every voltage. Tests: `tests/electrical/test_curve.py::test_series_identity`, `::test_parallel_identity`, `::test_parallel_identity_full_curve`.
 4. The power of any assembly never exceeds the sum of the maximum powers of its parts. Test: `tests/electrical/test_curve.py::test_power_bound`.
 5. Solar position is computed with time-zone-aware timestamps.
@@ -89,6 +89,7 @@ Write a record in `docs/decisions/` only if the decision (a) chooses between rea
 - Don't exchange data with front ends as Python pickles.
 - Don't put strings of unequal module count in parallel, or modules of different current class in series, without the library warning about it.
 - Don't replace a wrong input with a default and continue. Raise an error.
+- Don't build a current grid with `np.linspace` or with a fixed range in amps. Use `cell_current_grid` for cells and `current_grid` elsewhere.
 - Don't hardcode personal absolute paths.
 - Don't edit before a plan is agreed. Present a plan with numbered questions and wait.
 - Don't commit unless Justin asks.

@@ -1,4 +1,4 @@
-"""Combining curves (plan docs/plans/electrical-core.md, 4.3)."""
+"""Combining curves (plan docs/plans/electrical-core.md, 4.3 and 10.5)."""
 
 import numpy as np
 import pytest
@@ -8,6 +8,7 @@ from cactus.electrical import (
     IVCurve,
     bypass,
     cell_curves,
+    current_grid,
     max_power_point,
     parallel,
     series,
@@ -154,3 +155,39 @@ def test_ivcurve_validation():
 def test_mpp_of_dead_curve():
     dead = IVCurve(np.array([-1.0, 0.0, 1.0, 2.0]), np.array([0.0, -0.1, -0.2, -0.5]))
     assert max_power_point(dead) == (0.0, 0.0, 0.0)
+
+
+# Addendum A (plan section 10.5): grids.
+
+
+def test_current_grid():
+    g = current_grid(-3.0, 9.0, 600)
+    assert g.size == 600
+    assert np.all(np.diff(g) > 0)
+    assert g[0] == -3.0
+    assert g[-1] == 9.0
+    assert np.count_nonzero(g == 0.0) == 1
+    assert np.count_nonzero(g < 0.0) == 150
+
+
+def test_current_grid_one_sided():
+    np.testing.assert_array_equal(current_grid(0.0, 9.0, 10), np.linspace(0.0, 9.0, 10))
+    np.testing.assert_array_equal(current_grid(1.0, 2.0, 5), np.linspace(1.0, 2.0, 5))
+
+
+def test_current_grid_errors():
+    with pytest.raises(ValueError):
+        current_grid(-3.0, 9.0, 2)
+    with pytest.raises(ValueError):
+        current_grid(1.0, 1.0, 600)
+    with pytest.raises(ValueError):
+        current_grid(2.0, 1.0, 600)
+
+
+def test_combined_grids_contain_zero(cell, grid, unshaded):
+    """Invariant 2: every grid built when combining contains 0 A."""
+    (one,) = cell_curves(cell, 1000.0, 25.0, grid)
+    tier = parallel([unshaded] * 3)
+    for curve in (series([one] * 10), tier, series([tier, tier])):
+        assert curve.current.size == 600
+        assert np.count_nonzero(curve.current == 0.0) == 1

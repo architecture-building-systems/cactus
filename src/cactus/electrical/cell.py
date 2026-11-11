@@ -14,6 +14,13 @@ import numpy as np
 from pvlib import pvsystem, singlediode
 
 from .curve import IVCurve
+from .curve import current_grid as build_current_grid
+
+#: Irradiance (W/m2) below which the shunt resistance stops rising. De Soto's
+#: shunt resistance is R_sh_ref * 1000 / irradiance, infinite in the dark; a
+#: dark cell's reverse branch would then carry the same current at every
+#: voltage and could not be interpolated. Photocurrent is not floored.
+MIN_SHUNT_IRRADIANCE = 0.1
 
 
 @dataclass(frozen=True)
@@ -68,6 +75,48 @@ def cell_parameters_from_module(
     )
 
 
+def _single_diode_values(params: CellParameters, irradiance, temperature):
+    """Checked irradiance and the five De Soto values, one entry per cell."""
+    irradiance = np.atleast_1d(np.asarray(irradiance, dtype=float))
+    if irradiance.ndim != 1:
+        raise ValueError("irradiance must be a scalar or a 1-D array")
+    if np.any(irradiance < 0) or not np.all(np.isfinite(irradiance)):
+        raise ValueError("irradiance must be finite and non-negative")
+    temperature = np.broadcast_to(
+        np.asarray(temperature, dtype=float), irradiance.shape
+    )
+    values = pvsystem.calcparams_desoto(
+        irradiance,
+        temperature,
+        alpha_sc=params.alpha_sc,
+        a_ref=params.a_ref,
+        I_L_ref=params.I_L_ref,
+        I_o_ref=params.I_o_ref,
+        R_sh_ref=params.R_sh_ref,
+        R_s=params.R_s,
+        EgRef=params.EgRef,
+        dEgdT=params.dEgdT,
+    )
+    return irradiance, *(
+        np.broadcast_to(np.asarray(x, dtype=float), irradiance.shape) for x in values
+    )
+
+
+def cell_current_grid(
+    params: CellParameters, irradiance, temperature, n_points: int = 600
+) -> np.ndarray:
+    """Current grid sized to the cells of one assembly at one time step.
+
+    The range runs from -0.5 to 1.6 times the largest photocurrent of the
+    cells passed, so resolution relative to the operating current is the same
+    at every light level. In the dark the range is set by one thousandth of
+    ``I_L_ref``.
+    """
+    _, il, *_ = _single_diode_values(params, irradiance, temperature)
+    i_ref = max(float(il.max()), 1e-3 * params.I_L_ref)
+    return build_current_grid(-0.5 * i_ref, 1.6 * i_ref, n_points)
+
+
 def cell_voltage_at_current(
     params: CellParameters,
     irradiance,
@@ -81,38 +130,28 @@ def cell_voltage_at_current(
     ``temperature`` is broadcast to it. Returns an array of shape
     ``(n_cells, len(current_grid))``.
 
+    A ``current_grid`` that spans zero must contain 0.0 A (build it with
+    ``current_grid`` or ``cell_current_grid``), so that open-circuit voltage is
+    read at a grid point and not interpolated across a step.
+
     For currents above the highest current the sampled curve reaches, the
     voltage is the breakdown voltage. This is a modelling choice: with De Soto
     parameters a dark cell has infinite shunt resistance and the Bishop term
     vanishes, so without it a dark cell could carry no reverse current at all.
+    The shunt resistance is capped at its value at ``MIN_SHUNT_IRRADIANCE``.
     """
-    irradiance = np.atleast_1d(np.asarray(irradiance, dtype=float))
-    if irradiance.ndim != 1:
-        raise ValueError("irradiance must be a scalar or a 1-D array")
-    if np.any(irradiance < 0) or not np.all(np.isfinite(irradiance)):
-        raise ValueError("irradiance must be finite and non-negative")
-    temperature = np.broadcast_to(
-        np.asarray(temperature, dtype=float), irradiance.shape
-    )
+    if not (np.isfinite(params.R_sh_ref) and params.R_sh_ref > 0):
+        raise ValueError(f"R_sh_ref must be finite and positive, got {params.R_sh_ref}")
     grid = np.asarray(current_grid, dtype=float)
     if grid.ndim != 1 or grid.size < 2 or not np.all(np.diff(grid) > 0):
         raise ValueError("current_grid must be a strictly increasing 1-D array")
+    if grid[0] < 0.0 < grid[-1] and not np.any(grid == 0.0):
+        raise ValueError("a current_grid that spans zero must contain 0.0 A")
 
-    values = pvsystem.calcparams_desoto(
-        irradiance,
-        temperature,
-        alpha_sc=params.alpha_sc,
-        a_ref=params.a_ref,
-        I_L_ref=params.I_L_ref,
-        I_o_ref=params.I_o_ref,
-        R_sh_ref=params.R_sh_ref,
-        R_s=params.R_s,
-        EgRef=params.EgRef,
-        dEgdT=params.dEgdT,
+    irradiance, il, i0, rs, rsh, nnsvth = _single_diode_values(
+        params, irradiance, temperature
     )
-    il, i0, rs, rsh, nnsvth = (
-        np.broadcast_to(np.asarray(x, dtype=float), irradiance.shape) for x in values
-    )
+    rsh = np.minimum(rsh, params.R_sh_ref * 1000.0 / MIN_SHUNT_IRRADIANCE)
     breakdown = {
         "breakdown_voltage": params.breakdown_voltage,
         "breakdown_factor": params.breakdown_factor,
@@ -134,6 +173,8 @@ def cell_voltage_at_current(
         )
         # Current falls as diode voltage rises; reverse so current increases.
         i, v = i[::-1], v[::-1]
+        if not np.all(np.diff(i) > 0):
+            raise ValueError(f"sampled current of cell {k} is not strictly increasing")
         if grid[0] < i[0]:
             raise ValueError(
                 f"current_grid starts at {grid[0]} A, below the lowest sampled "
