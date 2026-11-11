@@ -1,6 +1,6 @@
 # Electrical core plan (phase 1)
 
-Status: Approved (Justin answered section 7 on 2026-11-10)
+Status: Built (awaiting review), 2026-11-11, with one open question (8, question 3). Approved 2026-11-10 (Justin answered section 7).
 Date: 2026-11-10. Code checked at cactus branch `bootstrap`.
 Branch for the work: `phase-1-electrical-core` (create from `bootstrap`, or from `main` once `bootstrap` is merged)
 Depends on: phase 0 (bootstrap)
@@ -147,11 +147,174 @@ All answered 2026-11-10.
 
 ## 8. Build report
 
-Filled in by the building session.
-
-- Date, model, branch, last commit:
-- What was built:
+- Date, model, branch, last commit: 2026-11-11, Claude Opus 5.5 (configured `claude-opus-5-5`) in Cowork. Branch `phase-1-electrical-core`, created from `main` at ce99def (bootstrap already merged in PR #1). The build is one commit on that branch; its hash is in `git log`.
+- What was built: `src/cactus/electrical/` (`__init__.py`, `curve.py`, `cell.py`) with every name in 4.2; `tests/electrical/` (`conftest.py`, `test_cell.py`, `test_curve.py`) with all 18 tests in 4.3, written first and seen failing (collection error, module missing) before the code existed. `AGENTS.md` Layout and invariants 1, 2, 3, 4, 8 updated; `docs/plans/README.md` row updated.
+- Numbers measured (25 degC): cell Pmp 3.13196 W (pvlib `bishop88_mpp` 3.13213 W, -0.005 %); cell Voc 0.69029 V; cell minimum voltage on `grid` -13.60 V; unshaded substring 225.501 W; module (two substrings in parallel) 450.988 W vs pvlib 451.03 W (-0.009 %); one cell at 200 W/m2: ratio 0.6547 (147.6 W); strings of 4 and 11 in parallel: 0.5517; five strings of 10: 0.99997; two tiers of two: 0.99997; three substrings in parallel: 0.99997. All agree with the prototype output.
 - Deviations from the brief:
-- Checks run (paste summary lines) and checks not run:
+  1. `IVCurve` also rejects non-finite values and arrays that are not 1-D. The brief lists only monotonicity and length checks.
+  2. `parallel([])` raises `ValueError`, matching `series([])`. The brief states this only for `series`.
+  3. `max_power_point` reads the current at the parabola's peak by interpolating between the three points used for the fit, not over the whole curve. Same value; it avoids interpolating over flat parts of a curve. It also skips the parabola when the three voltages are equal.
+  4. Reverse-bias diode-voltage samples use `np.linspace(0.97 * breakdown_voltage, 0, n_sample // 2, endpoint=False)` as the brief says; the prototype used `n_sample // 2 - 1` points. No measurable effect on the numbers above.
+  5. `test_no_bypass_reverse_bias` sits in `test_cell.py`; the brief does not assign tests to files.
+- Checks run, on Python 3.13.18 in the cloud container with `UV_PROJECT_ENVIRONMENT` outside the repo (pvlib 0.16.1, numpy 2.5.4):
+  - `uv sync`: `Resolved 21 packages`, `Checked 20 packages`
+  - `uv run pytest -q`: `19 passed in 1.26s` (first commit); `21 passed in 1.48s` after the two tests from questions 1 and 2
+  - `uv run ruff check`: `All checks passed!`
+  - `uv run ruff format --check`: `13 files already formatted`
+  - Not run: the same checks on Justin's Mac (macOS `.venv`), and nothing was run in the device shell (Python 3.10, no pvlib).
+- Optional PVMismatch cross-check: `pvmismatch` 4.1 imports on Python 3.13 (with a SyntaxWarning in its docstrings). Module `STD72` (three bypassed groups of 24), bypass -0.5 V, first cell at 0.2 suns. With PVMismatch's default cell: 241.0 W unshaded, 206.0 W shaded, ratio 0.855 (its default reverse-bias parameters differ). With an approximate D001 mapping (one diode, `Isat2_T0=0`, `Isat1_T0=8.85e-12`, `Isc0_T0=5.6715`, per-cell `Rs`, `Rsh`, `aRBD=0.002`, `bRBD=0`, `VRBD=-15`, `nRBD=3.28`): 228.3 W unshaded, 152.0 W shaded, ratio 0.666, against cactus 225.5 W, 147.6 W, 0.655. The mapping is not exact: PVMismatch fixes the diode ideality at 1 (D001 cell `a_ref` 0.02540 V vs thermal voltage 0.02569 V) and uses Isc rather than IL. Not added as a dependency.
 - Questions back to planning:
+  1. Answered (Justin, 2026-11-11): add a full-curve parallel identity test, relative tolerance 1e-3. Added as `test_parallel_identity_full_curve`: three unshaded substrings in parallel, current at 200 voltages from 0 to 0.99 of the substring's open-circuit voltage against 3 times the substring current. Largest measured error 0.049 % (8 mA).
+  2. Answered (Justin, 2026-11-11): yes. Added `test_parallel_needs_shared_range`: all voltages <= 0, voltage ranges [2, 3] V and [0, 1] V that do not overlap, and an empty list each raise `ValueError`.
+  3. Answered by addendum A (section 10), 2026-11-11. Found after the first build: a fully dark cell's voltage at 0 A is not defined. De Soto parameters give infinite shunt resistance at 0 W/m2, so every reverse voltage from 0 to -14.55 V carries about 0 A, and interpolation on `grid` returns -11.1 V where about 0 V is right. A 24-cell series with one dark cell then reads 4.76 V at 0 A instead of about 16 V; a bypass does not hide it. Maximum power is unaffected (substring with one dark cell: 147.64 W on 600 and on 6000 points). Justin chose option (a) on 2026-11-11: compute cells below a minimum irradiance (0.1 W/m2 proposed) at that minimum so the shunt stays finite. Tried and taken back out, not committed: with the floor, the dark cell's whole curve from open circuit to breakdown fits inside about 5 mA, narrower than the 20 mA spacing of `grid`, so 0 A still interpolates to -10.6 V (24-cell string 5.24 V). Measured with the floor: 6000-point grid gives 0.423 V (string 16.30 V); `grid` with 0 A added gives 0.456 V (string 16.33 V). Planning needs to decide: (i) whether the floor is kept and at what value, and (ii) how the current grid resolves a dark cell near 0 A (always include 0 A and each cell's photocurrent, a finer grid near zero, or another method), including the grids `series` and `parallel` build. Test drafted for this: dark cell voltage at 0 A in [0, 0.6903) V, and the 24-cell string with one dark cell above 23 x 0.6903 V at 0 A.
+  4. Answered by addendum A (section 10). Related to 3: for a dark cell `bishop88` returns many nearly equal currents on the reverse branch, so `np.interp` gets sample currents that may not be strictly increasing, and its result there is not guaranteed. The fix chosen for 3 should cover this.
 - Notes on things seen but not changed:
+  1. `bishop88` at irradiance 0 runs with infinite shunt resistance. A run with warnings turned into errors (`python -W error`) at 0 W/m2 and 500 W/m2, 75 degC, raised nothing.
+  2. A dark cell's sampled curve ends at about 0 A (risk 1 in section 2: the Bishop term vanishes), so on `grid` it steps from +0.54 V at -0.015 A to -15.0 V at +0.005 A. See question 3.
+  3. `test_power_bound` takes most of the test time (50 x 72 cells); fine for now.
+
+## 9. Review of the build (planning session, 2026-11-11)
+
+Checked at `phase-1-electrical-core` be7ca3a. Tests re-run on Python 3.13.18 in the cloud container: 21 passed, ruff clean.
+
+- Deviations 1 to 5 are all kept. 1 and 2 add input checks the brief should have listed. 3 gives the same value and avoids interpolating across flat parts of a curve. 4 follows the brief. 5 is file placement.
+- The measured numbers match the plan's expected values and the prototype.
+- Findings beyond the build report:
+  1. **The current grid is fixed in amps, so accuracy falls with irradiance.** On the test fixture grid (-3 to 9 A, 600 points) a three-string array with 15 % cell-to-cell variation is off by 0.07 % at 1000 W/m2, 0.4 % at 300, 2.5 % at 100 and 5.5 % at 30, against a 12000-point grid. With the grid scaled to the largest photocurrent the error is 0.07 % at every level. This matters more than the dark cell for facades, which spend many hours at 100 to 300 W/m2. Fixed by addendum A.
+  2. `_current_at_voltage` adds a slope of 1e-9 V/A to make voltage invertible, but `IVCurve` allows upward noise of 1e-9 V. On a small grid (low light) the slope is smaller than the noise and `np.interp` can receive voltages that are not monotonic. Fixed by addendum A.
+  3. `parallel` uses only the voltage range all operands share and says nothing when that cuts off part of a curve. If the true maximum power point lies above the shared range the result is silently low. Not seen in the tests (the 4-and-11 case has its optimum inside the range). Deferred to phase 2, where grids are chosen: check that an array's maximum power point is not at the upper edge of the shared range.
+  4. `cell_voltage_at_current` loops over cells in Python. Fine now; phase 4 has to remove the loop for annual runs.
+
+## 10. Addendum A: grids and dark cells
+
+Status: Approved (Justin, 2026-11-11) and built; see the second build report entry in 10.7
+Resolves build report questions 3 and 4 and review findings 1 and 2. Work continues on `phase-1-electrical-core`.
+
+### 10.1 What was measured
+
+All with device D001 at 25 degC, on a copy of be7ca3a with the changes below applied.
+
+| Case | As built | With the changes |
+|---|---|---|
+| Dark cell, voltage at 0 A | -11.12 V | 0.000 V |
+| 24 cells in series, one dark, voltage at 0 A | 4.76 V | 15.877 V (23 x 0.69029) |
+| Substring, one dark cell, voltage at 0 A | 37.90 V | 49.010 V (71 x 0.69029) |
+| Substring, one dark cell, maximum power | 147.638 W | 147.638 W |
+| Unshaded substring, maximum power | 225.5011 W | 225.5014 W |
+| Module (two substrings in parallel) | 450.9882 W | 450.9892 W |
+| Strings of 4 and 11 in parallel, ratio | 0.55170 | 0.55167 |
+| All 21 existing tests, tolerances unchanged | pass | pass |
+
+What fixes what:
+
+- Voltage at 0 A is fixed by having 0 A as a point in every grid, and by nothing else. A minimum-irradiance floor alone leaves it at -10.6 V; 0 A in the grid alone gives 0.000 V.
+- The floor is still needed for question 4: without it a dark cell's sampled currents are not strictly increasing.
+- A floor on irradiance gives a dark cell 0.456 V at open circuit (a module at night would show about 33 V). A floor on shunt resistance only keeps photocurrent at zero and gives 0.000 V.
+- Results do not depend on the floor value: 0.001, 0.01, 0.1 and 1 W/m2 give the same maximum power and open-circuit voltage to four decimals.
+
+### 10.2 Decisions
+
+a. **Floor.** Keep a floor at 0.1 W/m2, applied to the shunt resistance only: `rsh = min(rsh, R_sh_ref * 1000 / 0.1)`. Photocurrent stays as De Soto gives it. (Justin's option (a) applied the floor to irradiance for all parameters; question 1 in 10.6.)
+
+b. **Grids.**
+1. One function, `current_grid(lo, hi, n_points)`, builds every current grid. It returns exactly `n_points` values and contains 0.0 A whenever the range spans zero. `series` and `parallel` use it.
+2. `cell_voltage_at_current` raises `ValueError` for a grid that spans zero without containing 0.0.
+3. A second function, `cell_current_grid(params, irradiance, temperature, n_points)`, sets the range from the largest photocurrent of the cells passed: from -0.5 to 1.6 times that current (the same proportions as the -3 to 9 A fixture at 1000 W/m2). Callers use it for the cells of one assembly at one time step.
+
+c. **Cost.**
+- Maximum power changes by at most 3 parts in 100,000 in the existing cases (table above).
+- The grid length stays fixed at `n_points`, so arrays keep the shape (time, points) in phase 4. A scaled grid is one fixed set of points multiplied by one number per time step.
+- No extra points are added, so run time is unchanged (0.17 s for an 18-module array with 2592 cells).
+- `parallel` still builds a voltage grid whose length varies. That was already the part phase 4 has to redesign; this addendum does not change it.
+
+Rejected alternatives:
+
+- Floor on irradiance for all parameters: invents photocurrent in the dark; no benefit over the shunt-only floor.
+- No floor, strictness forced by adding a tiny ramp to the sampled currents: hides a model limit instead of stating it.
+- Adding each cell's photocurrent to the grid as an extra point: resolves every step exactly, but the grid length then depends on the shading pattern, which rules out a (time, points) array in phase 4.
+- Finer spacing near zero (geometric or squared): once the grid is scaled it resolves only currents that carry almost no power, and it takes points away from the region of the maximum power point. Not measured; rejected on that reasoning.
+- More points on the fixed grid: 1200 points halves the error but does not remove the dependence on irradiance.
+
+### 10.3 Files to change
+
+- `src/cactus/electrical/curve.py`: add `current_grid`; add private `_strictly_decreasing`; change `series`, `parallel`, `_current_at_voltage`; remove `SLOPE`.
+- `src/cactus/electrical/cell.py`: add `MIN_SHUNT_IRRADIANCE`, `cell_current_grid`; change `cell_voltage_at_current`.
+- `src/cactus/electrical/__init__.py`: export `current_grid` and `cell_current_grid`.
+- `tests/electrical/conftest.py`: fixture `grid` becomes `current_grid(-3.0, 9.0, 600)`.
+- `tests/electrical/test_cell.py`: `test_wide_negative_grid_is_finite` uses `current_grid(-50.0, 9.0, 600)`; new tests below.
+- `tests/electrical/test_curve.py`: new tests below.
+- `AGENTS.md`: Layout line for the two new functions; invariant 2 gains the new test names.
+
+### 10.4 Functions
+
+`current_grid(lo, hi, n_points=600) -> np.ndarray`: raise `ValueError` if `n_points < 3` or not `lo < hi`. If `lo < 0 < hi`: `n_neg = min(n_points - 2, max(1, round((n_points - 1) * -lo / (hi - lo))))`; result is `linspace(lo, 0, n_neg, endpoint=False)` followed by `linspace(0, hi, n_points - n_neg)`. Otherwise `linspace(lo, hi, n_points)`.
+
+`_strictly_decreasing(values) -> np.ndarray`: `m = np.minimum.accumulate(values)`; `step = 4 * np.finfo(float).eps * max(1.0, max(abs(m)))`; return `m - step * np.arange(m.size)`.
+
+`_current_at_voltage(curve, v_grid)`: `strict = _strictly_decreasing(curve.voltage)`; clip `v_grid` to `[strict[-1], strict[0]]`; interpolate current at those voltages. (The clip moves a value by at most `600 * step`; it is not an extrapolation.)
+
+`series`: unchanged except the grid is `current_grid(lo, hi, n_points)`.
+
+`parallel`: unchanged up to the summed current `total`. Then `falling = _strictly_decreasing(total)`; `grid = current_grid(falling[-1], falling[0], n_points)`; voltage is `np.interp(grid, falling[::-1], v_grid[::-1])`.
+
+`MIN_SHUNT_IRRADIANCE = 0.1` (W/m2), module constant in `cell.py` with a comment giving the reason.
+
+`cell_voltage_at_current`: three changes.
+1. Raise `ValueError` if `R_sh_ref` is not finite and positive.
+2. Raise `ValueError` if `grid[0] < 0 < grid[-1]` and 0.0 is not an element of the grid.
+3. After `calcparams_desoto`: `rsh = np.minimum(rsh, params.R_sh_ref * 1000.0 / MIN_SHUNT_IRRADIANCE)`. After reversing the sampled arrays: raise `ValueError` if the sampled current is not strictly increasing.
+
+`cell_current_grid(params, irradiance, temperature, n_points=600) -> np.ndarray`: photocurrent of each cell from `calcparams_desoto`; `i_ref = max(largest photocurrent, 1e-3 * params.I_L_ref)`; return `current_grid(-0.5 * i_ref, 1.6 * i_ref, n_points)`. Same input checks on irradiance as `cell_voltage_at_current`.
+
+### 10.5 Tests to write first
+
+Fixtures as in 4.3, with `grid = current_grid(-3.0, 9.0, 600)`. "Voltage at 0 A" is `np.interp(0.0, curve.current, curve.voltage)`. Cell open-circuit voltage is 0.69029 V.
+
+| Test | Set-up | Expected |
+|---|---|---|
+| `test_current_grid` | `current_grid(-3.0, 9.0, 600)` | 600 values, strictly increasing, first -3.0, last 9.0, exactly one value equal to 0.0, 150 values below zero |
+| `test_current_grid_one_sided` | `current_grid(0.0, 9.0, 10)` and `current_grid(1.0, 2.0, 5)` | equal to `np.linspace` of the same arguments |
+| `test_current_grid_errors` | `n_points=2`; `lo == hi`; `lo > hi` | each raises `ValueError` |
+| `test_grid_spanning_zero_must_contain_zero` (invariant 2) | `cell_voltage_at_current` with `np.linspace(-3.0, 9.0, 600)` | raises `ValueError` |
+| `test_dark_cell_at_zero_current` | one cell at 0 W/m2 on `grid` | voltage at 0 A within 1e-6 V of 0.0 |
+| `test_string_with_dark_cell_open_circuit` | 24 cells in series, first at 0, others 1000, no bypass | voltage at 0 A within 1e-3 V of 23 times the lit cell's voltage at 0 A (15.877 V) |
+| `test_substring_with_dark_cell` | substring, first cell at 0 | voltage at 0 A within 0.01 V of 49.010; maximum power within 0.1 % of 147.64 W |
+| `test_combined_grids_contain_zero` | `series` of 10 cells; `parallel` of 3 unshaded substrings; `series` of two such parallels | each result's current has exactly one value equal to 0.0 and 600 values |
+| `test_night` | substring with all 72 cells at 0, on `cell_current_grid` of those cells; and two such in parallel | `max_power_point` is `(0.0, 0.0, 0.0)` for both; substring voltage at 0 A within 1e-6 V of 0.0; no error raised |
+| `test_low_irradiance_sweep_runs` (question 4) | one cell at each of 0, 1e-6, 0.05, 0.1, 1 W/m2 and each of -20, 25, 85 degC, on `grid` | no error; every voltage array finite and never increasing |
+| `test_infinite_shunt_rejected` | `dataclasses.replace(cell, R_sh_ref=float("inf"))` at 1000 W/m2 | raises `ValueError` |
+| `test_cell_current_grid` | cell at 100 W/m2 | first value -0.28357485, last 0.90743951 (relative 1e-8), one value equal to 0.0; for three cells at 0 W/m2: first -0.0028357485, last 0.0090743951 |
+| `test_low_light_accuracy` | substring with irradiance `default_rng(0).uniform(70.0, 100.0, 72)`, built on `cell_current_grid(..., 600)` and again with 6000 points everywhere | maximum power on 600 points within 0.1 % of the 6000-point value (16.290 W against 16.288 W) |
+| `test_uniform_low_light_matches_pvlib` | unshaded substring at 100, 30 and 10 W/m2 on `cell_current_grid` | maximum power within 0.05 % of half of `bishop88_mpp` on the module-level values (21.352, 6.076, 1.920 W) |
+
+`test_parallel_identity_full_curve` has its own copy of the old slope helper; leave it as it is (it is test code and still valid).
+
+Out of scope: the check in review finding 3; removing the Python loop over cells; any change to `n_sample`.
+
+Finished means: the 21 existing tests pass with tolerances unchanged, the 14 tests above pass, ruff is clean, `AGENTS.md` is updated, and a second entry is added to the build report.
+
+### 10.6 Questions for Justin
+
+All answered 2026-11-11.
+
+1. Floor on shunt resistance only, instead of on irradiance for all parameters: Justin accepted.
+2. Include the scaled grid (`cell_current_grid`) in this fix: Justin chose yes.
+3. A grid that spans zero without containing 0.0 raises an error: Justin chose yes.
+4. Defer the silent voltage-range restriction in `parallel` (review finding 3) to the phase 2 plan: Justin chose yes.
+
+### 10.7 Build report, addendum A
+
+- Date, model, branch: 2026-11-11, planning session (Claude Fable 5.2 in Cowork), branch `phase-1-electrical-core`, one commit after be7ca3a; its hash is in `git log`. Justin chose to have this session apply the fix because the changes were already written and measured for the addendum.
+- What was built: everything in 10.3 and 10.4. The 14 tests in 10.5 (16 test cases, because `test_uniform_low_light_matches_pvlib` runs at three irradiances). The tests fail against be7ca3a (import error for `current_grid`) and pass with the change.
+- Deviations from the addendum:
+  1. `cell.py` gained a private helper `_single_diode_values` so that `cell_current_grid` and `cell_voltage_at_current` share the irradiance checks and the De Soto call.
+  2. In `cell.py` the grid function is imported as `build_current_grid`, because `cell_voltage_at_current` and `cell_curves` already have a parameter named `current_grid`.
+  3. `AGENTS.md` also gained a Don't line about building grids with `np.linspace` or a fixed range in amps.
+- Existing tests: unchanged except the `grid` fixture and the wide grid in `test_wide_negative_grid_is_finite`, which now use `current_grid`. No expected value or tolerance was changed.
+- Checks run, on Python 3.13.18 in the cloud container with `UV_PROJECT_ENVIRONMENT` outside the repo (pvlib 0.16.1, numpy 2.5.4):
+  - `uv run pytest -q`: `37 passed in 1.59s`; also passes with `python -W error -m pytest`
+  - `uv run ruff check`: `All checks passed!`
+  - `uv run ruff format --check`: `12 files already formatted`
+  - Not run: the same checks on Justin's Mac.
+- Numbers measured: as in the table in 10.1. Array error against a 12000-point grid with the scaled grid: 0.07 % (15 % cell-to-cell variation) and 0.03 % (shaded blocks) at 1000, 300, 100, 30 and 10 W/m2.
+- Carried to phase 2: review finding 3 (check that an array's maximum power point is not at the upper edge of the voltage range `parallel` used). Carried to phase 4: the Python loop over cells, and the variable-length voltage grid inside `parallel`.
