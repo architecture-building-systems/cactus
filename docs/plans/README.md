@@ -5,7 +5,7 @@ One file per piece of work. Status values: Draft, Approved, In progress, Built (
 | Plan | Status | Branch | Notes |
 |---|---|---|---|
 | [migration.md](migration.md) | Approved | | Order of work to a first end-to-end release. Phase 0 done. |
-| [electrical-core.md](electrical-core.md) | Built (awaiting review) | `phase-1-electrical-core` | Phase 1. Built 2026-11-11; see the plan's build report. Reference prototype: `electrical-core-prototype.py`. |
+| [electrical-core.md](electrical-core.md) | Built (awaiting review) | `phase-1-electrical-core` | Phase 1. Built 2026-11-11; one open question for planning (dark cell at 0 A, build report question 3). Reference prototype: `electrical-core-prototype.py`. |
 
 ## How work is split between sessions
 

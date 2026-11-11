@@ -1,6 +1,6 @@
 # Electrical core plan (phase 1)
 
-Status: Built (awaiting review), 2026-11-11. Approved 2026-11-10 (Justin answered section 7).
+Status: Built (awaiting review), 2026-11-11, with one open question (8, question 3). Approved 2026-11-10 (Justin answered section 7).
 Date: 2026-11-10. Code checked at cactus branch `bootstrap`.
 Branch for the work: `phase-1-electrical-core` (create from `bootstrap`, or from `main` once `bootstrap` is merged)
 Depends on: phase 0 (bootstrap)
@@ -158,15 +158,17 @@ All answered 2026-11-10.
   5. `test_no_bypass_reverse_bias` sits in `test_cell.py`; the brief does not assign tests to files.
 - Checks run, on Python 3.13.18 in the cloud container with `UV_PROJECT_ENVIRONMENT` outside the repo (pvlib 0.16.1, numpy 2.5.4):
   - `uv sync`: `Resolved 21 packages`, `Checked 20 packages`
-  - `uv run pytest -q`: `19 passed in 1.26s`
+  - `uv run pytest -q`: `19 passed in 1.26s` (first commit); `21 passed in 1.48s` after the two tests from questions 1 and 2
   - `uv run ruff check`: `All checks passed!`
   - `uv run ruff format --check`: `13 files already formatted`
   - Not run: the same checks on Justin's Mac (macOS `.venv`), and nothing was run in the device shell (Python 3.10, no pvlib).
 - Optional PVMismatch cross-check: `pvmismatch` 4.1 imports on Python 3.13 (with a SyntaxWarning in its docstrings). Module `STD72` (three bypassed groups of 24), bypass -0.5 V, first cell at 0.2 suns. With PVMismatch's default cell: 241.0 W unshaded, 206.0 W shaded, ratio 0.855 (its default reverse-bias parameters differ). With an approximate D001 mapping (one diode, `Isat2_T0=0`, `Isat1_T0=8.85e-12`, `Isc0_T0=5.6715`, per-cell `Rs`, `Rsh`, `aRBD=0.002`, `bRBD=0`, `VRBD=-15`, `nRBD=3.28`): 228.3 W unshaded, 152.0 W shaded, ratio 0.666, against cactus 225.5 W, 147.6 W, 0.655. The mapping is not exact: PVMismatch fixes the diode ideality at 1 (D001 cell `a_ref` 0.02540 V vs thermal voltage 0.02569 V) and uses Isc rather than IL. Not added as a dependency.
-- Questions back to planning: none blocking.
-  1. `test_parallel_identity` checks power and current at the maximum power point only; invariant 3 says "at every voltage". Should a test compare the whole parallel curve to 3 times the substring current on a voltage grid?
-  2. Invariant 2 is tested for `series` only; the `parallel` shared-range error has no test. Add one in a later phase?
+- Questions back to planning:
+  1. Answered (Justin, 2026-11-11): add a full-curve parallel identity test, relative tolerance 1e-3. Added as `test_parallel_identity_full_curve`: three unshaded substrings in parallel, current at 200 voltages from 0 to 0.99 of the substring's open-circuit voltage against 3 times the substring current. Largest measured error 0.049 % (8 mA).
+  2. Answered (Justin, 2026-11-11): yes. Added `test_parallel_needs_shared_range`: all voltages <= 0, voltage ranges [2, 3] V and [0, 1] V that do not overlap, and an empty list each raise `ValueError`.
+  3. Open, blocking the dark-cell fix. Found after the first build: a fully dark cell's voltage at 0 A is not defined. De Soto parameters give infinite shunt resistance at 0 W/m2, so every reverse voltage from 0 to -14.55 V carries about 0 A, and interpolation on `grid` returns -11.1 V where about 0 V is right. A 24-cell series with one dark cell then reads 4.76 V at 0 A instead of about 16 V; a bypass does not hide it. Maximum power is unaffected (substring with one dark cell: 147.64 W on 600 and on 6000 points). Justin chose option (a) on 2026-11-11: compute cells below a minimum irradiance (0.1 W/m2 proposed) at that minimum so the shunt stays finite. Tried and taken back out, not committed: with the floor, the dark cell's whole curve from open circuit to breakdown fits inside about 5 mA, narrower than the 20 mA spacing of `grid`, so 0 A still interpolates to -10.6 V (24-cell string 5.24 V). Measured with the floor: 6000-point grid gives 0.423 V (string 16.30 V); `grid` with 0 A added gives 0.456 V (string 16.33 V). Planning needs to decide: (i) whether the floor is kept and at what value, and (ii) how the current grid resolves a dark cell near 0 A (always include 0 A and each cell's photocurrent, a finer grid near zero, or another method), including the grids `series` and `parallel` build. Test drafted for this: dark cell voltage at 0 A in [0, 0.6903) V, and the 24-cell string with one dark cell above 23 x 0.6903 V at 0 A.
+  4. Related to 3: for a dark cell `bishop88` returns many nearly equal currents on the reverse branch, so `np.interp` gets sample currents that may not be strictly increasing, and its result there is not guaranteed. The fix chosen for 3 should cover this.
 - Notes on things seen but not changed:
   1. `bishop88` at irradiance 0 runs with infinite shunt resistance. A run with warnings turned into errors (`python -W error`) at 0 W/m2 and 500 W/m2, 75 degC, raised nothing.
-  2. A dark cell's sampled curve ends at about 0 A (risk 1 in section 2: the Bishop term vanishes), so on `grid` it steps from +0.54 V at -0.015 A to -15.0 V at +0.005 A. This is the designed rule and the curve stays non-increasing, but the step is one grid interval wide and visible if plotted.
+  2. A dark cell's sampled curve ends at about 0 A (risk 1 in section 2: the Bishop term vanishes), so on `grid` it steps from +0.54 V at -0.015 A to -15.0 V at +0.005 A. See question 3.
   3. `test_power_bound` takes most of the test time (50 x 72 cells); fine for now.

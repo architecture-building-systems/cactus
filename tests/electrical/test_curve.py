@@ -41,6 +41,22 @@ def test_parallel_identity(unshaded):
     assert i3 == pytest.approx(3 * i1, rel=1e-3)
 
 
+def _current_at(curve, v):
+    strict = curve.voltage - 1e-9 * (curve.current - curve.current[0])
+    return np.interp(v, strict[::-1], curve.current[::-1])
+
+
+def test_parallel_identity_full_curve(unshaded):
+    """Invariant 3: N identical strings in parallel give N times the current at
+    every voltage (Justin, 2026-11-11: relative tolerance 1e-3)."""
+    three = parallel([unshaded] * 3)
+    v_oc = np.interp(0.0, unshaded.current, unshaded.voltage)
+    v = np.linspace(0.0, 0.99 * v_oc, 200)
+    np.testing.assert_allclose(
+        _current_at(three, v), 3 * _current_at(unshaded, v), rtol=1e-3
+    )
+
+
 def test_module_matches_pvlib(d001_module, unshaded):
     m = d001_module
     module = parallel([unshaded, unshaded])
@@ -110,6 +126,20 @@ def test_series_needs_shared_range():
         series([a, b])
     with pytest.raises(ValueError):
         series([])
+
+
+def test_parallel_needs_shared_range():
+    """Invariant 2: parallel raises if the operands share no positive voltage."""
+    current = np.array([0.0, 1.0, 2.0])
+    dead = IVCurve(current, np.array([0.0, -0.5, -1.0]))
+    with pytest.raises(ValueError):
+        parallel([dead, dead])
+    high = IVCurve(current, np.array([3.0, 2.5, 2.0]))
+    low = IVCurve(current, np.array([1.0, 0.5, 0.0]))
+    with pytest.raises(ValueError):
+        parallel([high, low])
+    with pytest.raises(ValueError):
+        parallel([])
 
 
 def test_ivcurve_validation():

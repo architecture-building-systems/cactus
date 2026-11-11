@@ -51,8 +51,8 @@ The planned modules and the order they are built in are in `docs/plans/migration
 These must hold once the electrical core exists. Each gets a test when the code that it constrains is written; add the test name next to the invariant at that point.
 
 1. Bypass diodes act on the group of cells they span. Voltage is clipped per group inside the series sum, never on the summed voltage of a module or string. Test: `tests/electrical/test_curve.py::test_bypass_per_group`.
-2. No silent clamping or extrapolation when curves are combined. If one curve does not cover the current (series) or voltage (parallel) range needed, the code raises an error. Test: `tests/electrical/test_curve.py::test_series_needs_shared_range`.
-3. Identity cases: N identical cells in series under uniform conditions give N times the cell voltage at every current; N identical strings in parallel give N times the string current at every voltage. Tests: `tests/electrical/test_curve.py::test_series_identity`, `::test_parallel_identity`.
+2. No silent clamping or extrapolation when curves are combined. If one curve does not cover the current (series) or voltage (parallel) range needed, the code raises an error. Tests: `tests/electrical/test_curve.py::test_series_needs_shared_range`, `::test_parallel_needs_shared_range`.
+3. Identity cases: N identical cells in series under uniform conditions give N times the cell voltage at every current; N identical strings in parallel give N times the string current at every voltage. Tests: `tests/electrical/test_curve.py::test_series_identity`, `::test_parallel_identity`, `::test_parallel_identity_full_curve`.
 4. The power of any assembly never exceeds the sum of the maximum powers of its parts. Test: `tests/electrical/test_curve.py::test_power_bound`.
 5. Solar position is computed with time-zone-aware timestamps.
 6. The cell temperature range of any lookup or interpolation covers the temperatures that the temperature model can produce. Out-of-range input raises an error; it is not clamped silently.
